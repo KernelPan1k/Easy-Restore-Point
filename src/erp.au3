@@ -82,7 +82,7 @@ Func CheckVersion()
 	Local $aCurrentVersion = StringSplit($sToolVersion, ".")
 	Local $sVersion = _HTTP_Get("https://toolslib.net/api/softwares/979/version")
 
-	If StringInStr($sVersion, "Not found") Then
+	If @error <> 0 Or StringInStr($sVersion, "Not found") Then
 		Return
 	EndIf
 
