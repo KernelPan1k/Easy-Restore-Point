@@ -11,8 +11,8 @@
 #AutoIt3Wrapper_Res_LegalCopyright=kernel-panik
 #AutoIt3Wrapper_Run_Au3Stripper=y
 #Au3Stripper_Parameters=/rm /sf=1 /sv=1
-#AutoIt3Wrapper_Res_Icon_Add=C:\Users\IEUser\Desktop\EasyRestorePoint\src\icon.ico
-#AutoIt3Wrapper_Res_File_Add=C:\Users\IEUser\Desktop\EasyRestorePoint\src\icon.ico
+#AutoIt3Wrapper_Res_Icon_Add=.\icon.ico
+#AutoIt3Wrapper_Res_File_Add=.\icon.ico
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 
 #include-once
@@ -83,6 +83,11 @@ Func CheckVersion()
 
 	Local $aCurrentVersion = StringSplit($sToolVersion, ".")
 	Local $sVersion = _HTTP_Get("https://toolslib.net/api/softwares/979/version")
+
+	If StringInStr($sVersion, "Not found") Then
+		Return
+	EndIf
+
 	Local $aVersion = StringSplit($sVersion, ".")
 	Local $bNeedsUpdate = False
 
@@ -98,7 +103,7 @@ Func CheckVersion()
 		_SelfUpdate($sDownloadedFilePath, True, 5, False, False)
 
 		If @error Then
-			MsgBox($MB_SYSTEMMODAL, "Easy Restore Point - Updater", "The script must be a compiled exe to work correctly or the update file must exist.")
+			MsgBox($MB_SYSTEMMODAL, "Easy Restore Point by kernel-panik", "Updater")
 			QuitTool()
 		EndIf
 	EndIf
@@ -195,7 +200,7 @@ Func CreateSystemRestorePoint()
 EndFunc   ;==>CreateSystemRestorePoint
 
 Func CreateRestorePoint()
-	ProgressOn("Easy Restore Point", "Run", "0%")
+	ProgressOn("Easy Restore Point by kernel-panik", "Create a restore point", "0%")
 	Local $iSR_Enabled = _SR_Enable()
 
 	If $iSR_Enabled = 0 Then
@@ -237,11 +242,11 @@ Func GetHumanVersion()
 EndFunc   ;==>GetHumanVersion
 
 If $bDevVersion = False Then
-;~ 	CheckVersion()
+	CheckVersion()
 EndIf
 
 LogMessage("# Run at " & _Now())
-LogMessage("# Easy Restore Point (Kernel-panik) version " & $sToolVersion)
+LogMessage("# Easy Restore Point (kernel-panik) version " & $sToolVersion)
 LogMessage("# Website https://kernel-panik.me/")
 LogMessage("# Run by " & @UserName & " from " & @WorkingDir)
 LogMessage("# Computer Name: " & @ComputerName)
