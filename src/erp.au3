@@ -11,6 +11,8 @@
 #AutoIt3Wrapper_Res_LegalCopyright=kernel-panik
 #AutoIt3Wrapper_Run_Au3Stripper=y
 #Au3Stripper_Parameters=/rm /sf=1 /sv=1
+#AutoIt3Wrapper_Res_Icon_Add=C:\Users\IEUser\Desktop\EasyRestorePoint\src\icon.ico
+#AutoIt3Wrapper_Res_File_Add=C:\Users\IEUser\Desktop\EasyRestorePoint\src\icon.ico
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 
 #include-once
@@ -235,7 +237,7 @@ Func GetHumanVersion()
 EndFunc   ;==>GetHumanVersion
 
 If $bDevVersion = False Then
-	CheckVersion()
+;~ 	CheckVersion()
 EndIf
 
 LogMessage("# Run at " & _Now())
