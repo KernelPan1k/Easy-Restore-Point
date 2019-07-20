@@ -1,18 +1,16 @@
 #RequireAdmin
-
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
+#AutoIt3Wrapper_Icon=icon.ico
 #AutoIt3Wrapper_Outfile=easyrestorepoint.exe
 #AutoIt3Wrapper_Res_Description=Easy Restore Point By Kernel-Panik
-#AutoIt3Wrapper_Res_Fileversion=1
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.0
 #AutoIt3Wrapper_Res_ProductName=Easy Restore Point
 #AutoIt3Wrapper_Res_ProductVersion=0.1
 #AutoIt3Wrapper_Res_CompanyName=kernel-panik
-#AutoIt3Wrapper_Res_requestedExecutionLevel=requireAdministrator
 #AutoIt3Wrapper_Res_LegalCopyright=kernel-panik
+#AutoIt3Wrapper_Res_requestedExecutionLevel=requireAdministrator
 #AutoIt3Wrapper_Run_Au3Stripper=y
 #Au3Stripper_Parameters=/rm /sf=1 /sv=1
-#AutoIt3Wrapper_Res_Icon_Add=.\icon.ico
-#AutoIt3Wrapper_Res_File_Add=.\icon.ico
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 
 #include-once
