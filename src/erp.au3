@@ -3,9 +3,10 @@
 #AutoIt3Wrapper_Icon=icon.ico
 #AutoIt3Wrapper_Outfile=easyrestorepoint.exe
 #AutoIt3Wrapper_Res_Description=Easy Restore Point By Kernel-Panik
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.0
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.3
 #AutoIt3Wrapper_Res_ProductName=Easy Restore Point
-#AutoIt3Wrapper_Res_ProductVersion=0.1
+#AutoIt3Wrapper_Res_ProductVersion=0.3
+#AutoIt3Wrapper_Res_Comment=Easily create a restore point
 #AutoIt3Wrapper_Res_CompanyName=kernel-panik
 #AutoIt3Wrapper_Res_LegalCopyright=kernel-panik
 #AutoIt3Wrapper_Res_requestedExecutionLevel=requireAdministrator
@@ -16,18 +17,17 @@
 #include-once
 #include <GUIConstantsEx.au3>
 #include <WindowsConstants.au3>
-#include <InetConstants.au3>
 #include <MsgBoxConstants.au3>
 #include <Date.au3>
 #include <WinAPIFiles.au3>
-#include "SystemRestore.au3"
-#include "HTTP.au3"
-#include "_SelfUpdate.au3"
+#include <Array.au3>
 
-Global $sToolVersion = '0.1'
+Global $sToolVersion = '0.3'
 Global $sToolReportFile = "easyrestorepoint.txt"
-
+Global $bPowerShellAvailable = Null
 Global $bDevVersion = False
+Global $__g_oSR_WMI = Null
+Global $__g_oSR = Null
 
 If $bDevVersion = True Then
 	AutoItSetOption("MustDeclareVars", 1)
@@ -48,105 +48,153 @@ If Not IsAdmin() Then
 	QuitTool()
 EndIf
 
-Func QuitTool($bAutoDelete = False, $bOpen = False)
+Func PowershellIsAvailable()
+	Dim $bPowerShellAvailable
+
+	If IsBool($bPowerShellAvailable) Then Return $bPowerShellAvailable
+
+	Local $iPid = Run("powershell.exe", @TempDir, @SW_HIDE)
+
+	If @error <> 0 Or Not $iPid Then
+		$bPowerShellAvailable = False
+
+		Return $bPowerShellAvailable
+	EndIf
+
+	ProcessClose($iPid)
+
+	$bPowerShellAvailable = True
+
+	Return $bPowerShellAvailable
+EndFunc   ;==>PowershellIsAvailable
+
+Func QuitTool($bOpen = False)
 	Dim $sToolReportFile
 	Dim $bDevVersion
 
 	If $bOpen Then
 		Run("notepad.exe " & @DesktopDir & "\" & $sToolReportFile)
 	EndIf
-
-	If $bAutoDelete = True And $bDevVersion = False Then
-		Run(@ComSpec & ' /c timeout 3 && del /F /Q "' & @ScriptFullPath & '"', @TempDir, @SW_HIDE)
-		FileDelete(@ScriptFullPath)
-	EndIf
-
 	Exit
 EndFunc   ;==>QuitTool
 
-Func _IsInternetConnected()
-	Local $aReturn = DllCall('connect.dll', 'long', 'IsInternetConnected')
+Func SR_EnumRestorePointsPowershell()
+	Local $aRestorePoints[1][3], $iCounter = 0
+	$aRestorePoints[0][0] = $iCounter
+	Local $sOutput
+	Local $aRP[0]
+	Local $bStart = False
 
-	If @error Then
-		Return False
+	If PowershellIsAvailable() = False Then
+		Return $aRestorePoints
 	EndIf
 
-	Return $aReturn[0] = 0
-EndFunc   ;==>_IsInternetConnected
+	Local $iPid = Run('Powershell.exe -Command "$date = @{Expression={$_.ConvertToDateTime($_.CreationTime)}}; Get-ComputerRestorePoint | Select-Object -Property SequenceNumber, Description, $date"', @SystemDir, @SW_HIDE, $STDOUT_CHILD)
 
-Func CheckVersion()
-	Dim $sToolVersion
+	While 1
+		$sOutput &= StdoutRead($iPid)
+		If @error Then ExitLoop
+	WEnd
 
-	If _IsInternetConnected() = False Then Return
+	Local $aTmp = StringSplit($sOutput, @CRLF)
 
-	Local $aCurrentVersion = StringSplit($sToolVersion, ".")
-	Local $sVersion = _HTTP_Get("https://toolslib.net/api/softwares/979/version")
+	For $i = 1 To $aTmp[0]
+		Local $sRow = StringStripWS($aTmp[$i], $STR_STRIPLEADING + $STR_STRIPTRAILING + $STR_STRIPSPACES)
 
-	If @error <> 0 Or StringInStr($sVersion, "Not found") Then
-		Return
-	EndIf
+		If $sRow = "" Then ContinueLoop
 
-	Local $aVersion = StringSplit($sVersion, ".")
-	Local $bNeedsUpdate = False
-
-	For $i = 0 To UBound($aCurrentVersion) - 1
-		If $aCurrentVersion[$i] < $aVersion[$i] Then
-			$bNeedsUpdate = True
-			ExitLoop
+		If StringInStr($sRow, "-----") Then
+			$bStart = True
+		ElseIf $bStart = True Then
+			_ArrayAdd($aRP, $sRow)
 		EndIf
 	Next
 
-	If $bNeedsUpdate Then
-		Local $sDownloadedFilePath = DownloadLatest()
-		_SelfUpdate($sDownloadedFilePath, True, 5, False, False)
+	For $i = 0 To UBound($aRP) - 1
+		Local $sRow = $aRP[$i]
+		Local $aRow = StringSplit($sRow, " ")
+		Local $iNbr = $aRow[0]
 
-		If @error Then
-			MsgBox($MB_SYSTEMMODAL, "Easy Restore Point by kernel-panik", "Updater")
-			QuitTool()
+		If $iNbr >= 4 Then
+			Local $sTime = StringStripWS(_ArrayPop($aRow), $STR_STRIPLEADING + $STR_STRIPTRAILING + $STR_STRIPSPACES)
+			Local $sDate = StringStripWS(_ArrayPop($aRow), $STR_STRIPLEADING + $STR_STRIPTRAILING + $STR_STRIPSPACES)
+			Local $iSequence = Number(StringStripWS($aRow[1], $STR_STRIPLEADING + $STR_STRIPTRAILING + $STR_STRIPSPACES))
+
+			$sDate = StringReplace($sDate, '.', '/')
+			$sDate = StringReplace($sDate, '-', '/')
+
+			_ArrayDelete($aRow, 0)
+			_ArrayDelete($aRow, 0)
+			Local $sDescription = _ArrayToString($aRow, " ")
+			$sDescription = StringStripWS($sDescription, $STR_STRIPLEADING + $STR_STRIPTRAILING + $STR_STRIPSPACES)
+
+			$iCounter += 1
+			ReDim $aRestorePoints[$iCounter + 1][3]
+			$aRestorePoints[$iCounter][0] = $iSequence
+			$aRestorePoints[$iCounter][1] = $sDescription
+			$aRestorePoints[$iCounter][2] = $sDate & " " & $sTime
 		EndIf
+	Next
+
+	$aRestorePoints[0][0] = $iCounter
+
+	Return $aRestorePoints
+EndFunc   ;==>SR_EnumRestorePointsPowershell
+
+Func SR_WMIDateStringToDate($dtmDate)
+	Return _
+			(StringMid($dtmDate, 5, 2) & "/" & _
+			StringMid($dtmDate, 7, 2) & "/" & _
+			StringLeft($dtmDate, 4) & " " & _
+			StringMid($dtmDate, 9, 2) & ":" & _
+			StringMid($dtmDate, 11, 2) & ":" & _
+			StringMid($dtmDate, 13, 2))
+EndFunc   ;==>SR_WMIDateStringToDate
+
+Func SR_EnumRestorePoints()
+	Dim $__g_oSR_WMI
+
+	Local $aRestorePoints[1][3], $iCounter = 0
+	$aRestorePoints[0][0] = $iCounter
+
+	If Not IsObj($__g_oSR_WMI) Then
+		$__g_oSR_WMI = ObjGet("winmgmts:root/default")
 	EndIf
-EndFunc   ;==>CheckVersion
 
-Func DownloadLatest()
-	ProgressOn("Easy Restore Point - Updater", "Downloading..", "0%")
-	; Download from the following URL.
-	Local $sURL = "https://download.toolslib.net/download/direct/979/latest"
-	; Save the downloaded file to the temporary folder.
-	Local $sFilePath = _WinAPI_GetTempFileName(@TempDir)
-	; Remote file size
-	Local $iRemoteFileSize = InetGetSize($sURL)
-	; Download the file in the background with the selected option of 'force a reload from the remote site.'
-	Local $hDownload = InetGet($sURL, $sFilePath, $INET_FORCERELOAD, $INET_DOWNLOADBACKGROUND)
+	If Not IsObj($__g_oSR_WMI) Then
+		Return SR_EnumRestorePointsPowershell()
+	EndIf
 
-	; Wait for the download to complete by monitoring when the 2nd index value of InetGetInfo returns True.
-	Do
-		Sleep(250)
+	Local $RPSet = $__g_oSR_WMI.InstancesOf("SystemRestore")
 
-		; Get bytes received
-		Local $iBytesReceived = InetGetInfo($hDownload, $INET_LOCALCACHE)
-		; Calculate percentage
-		Local $iPercentage = Int($iBytesReceived / $iRemoteFileSize * 100)
-		; Set progress bar
-		ProgressSet($iPercentage, $iPercentage & "%")
-	Until InetGetInfo($hDownload, $INET_DOWNLOADCOMPLETE)
+	If Not IsObj($RPSet) Then
+		Return SR_EnumRestorePointsPowershell()
+	EndIf
 
-	; Retrieve the number of total bytes received and the filesize.
-	Local $iBytesSize = InetGetInfo($hDownload, $INET_DOWNLOADREAD)
-	Local $iFileSize = FileGetSize($sFilePath)
+	For $rP In $RPSet
+		$iCounter += 1
+		ReDim $aRestorePoints[$iCounter + 1][3]
+		$aRestorePoints[$iCounter][0] = $rP.SequenceNumber
+		$aRestorePoints[$iCounter][1] = $rP.Description
+		$aRestorePoints[$iCounter][2] = SR_WMIDateStringToDate($rP.CreationTime)
+	Next
 
-	; Close the handle returned by InetGet.
-	InetClose($hDownload)
+	$aRestorePoints[0][0] = $iCounter
 
-	; We are done.
-	ProgressOff()
+	Return $aRestorePoints
+EndFunc   ;==>SR_EnumRestorePoints
 
-	; Display details about the total number of bytes read and the filesize.
-;~     MsgBox($MB_SYSTEMMODAL, "", "The total download size: " & $iBytesSize & @CRLF & _
-;~             "The total filesize: " & $iFileSize)
+Func SR_RemoveRestorePoint($rpSeqNumber)
+	Local $aRet = DllCall('SrClient.dll', 'DWORD', 'SRRemoveRestorePoint', 'DWORD', $rpSeqNumber)
 
-	Return $sFilePath
+	If @error Then _
+			Return SetError(1, 0, 0)
 
-EndFunc   ;==>DownloadLatest
+	If $aRet[0] = 0 Then _
+			Return 1
+
+	Return SetError(1, 0, 0)
+EndFunc   ;==>SR_RemoveRestorePoint
 
 Func convertDate($sDtmDate)
 	Local $sY = StringLeft($sDtmDate, 4)
@@ -157,8 +205,8 @@ Func convertDate($sDtmDate)
 	Return $sM & "/" & $sD & "/" & $sY & " " & $sT
 EndFunc   ;==>convertDate
 
-Func ClearDayRestorePoint()
-	Local Const $aRP = _SR_EnumRestorePoints()
+Func ClearDailyRestorePoint()
+	Local Const $aRP = SR_EnumRestorePoints()
 
 	If $aRP[0][0] = 0 Then
 		Return Null
@@ -170,56 +218,106 @@ Func ClearDayRestorePoint()
 		Local $iDateCreated = $aRP[$i][2]
 
 		If $iDateCreated > $dTimeBefore Then
-			_SR_RemoveRestorePoint($aRP[$i][0])
+			SR_RemoveRestorePoint($aRP[$i][0])
+
+			Sleep(200)
 		EndIf
 	Next
-EndFunc   ;==>ClearDayRestorePoint
+EndFunc   ;==>ClearDailyRestorePoint
 
 Func ShowCurrentRestorePoint()
-	Local Const $aRP = _SR_EnumRestorePoints()
+	LogMessage(@CRLF & "- Display System Restore Point -" & @CRLF)
 
-	LogMessage(@CRLF & "- Display All System Restore Point -" & @CRLF)
+	Local Const $aRP = SR_EnumRestorePoints()
 
 	If $aRP[0][0] = 0 Then
-		LogMessage("No System Restore point found")
+		LogMessage("  [X] No System Restore point found")
 		Return
 	EndIf
 
 	For $i = 1 To $aRP[0][0]
-		LogMessage("RP named " & $aRP[$i][1] & " created at " & $aRP[$i][2] & " found")
+		LogMessage("    ~ [I] RP named " & $aRP[$i][1] & " created at " & $aRP[$i][2] & " found")
 	Next
 EndFunc   ;==>ShowCurrentRestorePoint
 
-Func CreateSystemRestorePoint()
-	#RequireAdmin
-	RunWait(@ComSpec & ' /c ' & 'wmic.exe /Namespace:\\root\default Path SystemRestore Call CreateRestorePoint "Easy Restore Point", 100, 7', "", @SW_HIDE)
+Func CheckIsRestorePointExist()
+	Local Const $aRP = SR_EnumRestorePoints()
+	Local Const $iNbr = $aRP[0][0]
 
-	Return @error
+	If $iNbr = 0 Then
+		Return False
+	EndIf
+
+	Return $aRP[$iNbr][1] = 'EasyRestorePoint'
+EndFunc   ;==>CheckIsRestorePointExist
+
+Func CreateSystemRestorePointWmi()
+	#RequireAdmin
+	RunWait(@ComSpec & ' /c ' & 'wmic.exe /Namespace:\\root\default Path SystemRestore Call CreateRestorePoint "EasyRestorePoint", 100, 7', "", @SW_HIDE)
+
+	Sleep(2000)
+EndFunc   ;==>CreateSystemRestorePointWmi
+
+Func CreateSystemRestorePointPowershell()
+	#RequireAdmin
+
+	If PowershellIsAvailable() = True Then
+		RunWait('Powershell.exe -Command Checkpoint-Computer -Description "EasyRestorePoint"', @ScriptDir, @SW_HIDE)
+	EndIf
+
+	Sleep(2000)
+EndFunc   ;==>CreateSystemRestorePointPowershell
+
+Func CreateSystemRestorePoint()
+	CreateSystemRestorePointWmi()
+
+	Local $bExist = CheckIsRestorePointExist()
+
+	ProgressSet(50)
+
+	If $bExist = False Then
+		ClearDailyRestorePoint()
+		CreateSystemRestorePointPowershell()
+	EndIf
 EndFunc   ;==>CreateSystemRestorePoint
+
+Func SR_Enable($DriveL)
+	Dim $__g_oSR
+
+	If Not IsObj($__g_oSR) Then
+		$__g_oSR = ObjGet("winmgmts:{impersonationLevel=impersonate}!root/default:SystemRestore")
+	EndIf
+
+	If Not IsObj($__g_oSR) Then
+		Return 0
+	EndIf
+
+	If $__g_oSR.Enable($DriveL) = 0 Then
+		Return 1
+	EndIf
+
+	Return 0
+EndFunc   ;==>SR_Enable
+
+Func EnableRestoration()
+	Local $iSR_Enabled = SR_Enable(@HomeDrive & '\')
+
+	If $iSR_Enabled = 0 Then
+		If PowershellIsAvailable() = True Then
+			RunWait("Powershell.exe -Command  Enable-ComputeRrestore -drive '" & @HomeDrive & "\' | Set-Content -Encoding utf8 ", @ScriptDir, @SW_HIDE)
+		EndIf
+	EndIf
+EndFunc   ;==>EnableRestoration
 
 Func CreateRestorePoint()
 	ProgressOn("Easy Restore Point by kernel-panik", "Create a restore point", "0%")
-	Local $iSR_Enabled = _SR_Enable()
 
-	If $iSR_Enabled = 0 Then
-		Sleep(5000)
-		$iSR_Enabled = _SR_Enable()
-	EndIf
-
-	ProgressSet(25, 25 & "%")
-
-	ClearDayRestorePoint()
-	Sleep(1500)
-	ProgressSet(50, 50 & "%")
-
+	EnableRestoration()
+	ProgressSet(25, "25%")
 	CreateSystemRestorePoint()
-	Sleep(1500)
-	ProgressSet(75, 75 & "%")
-
+	ProgressSet(75, "75%")
 	ShowCurrentRestorePoint()
-	ProgressSet(100, 100 & "%")
-
-	ProgressOff()
+	ProgressSet(100, "100%")
 EndFunc   ;==>CreateRestorePoint
 
 Func GetHumanVersion()
@@ -239,10 +337,6 @@ Func GetHumanVersion()
 	EndSwitch
 EndFunc   ;==>GetHumanVersion
 
-If $bDevVersion = False Then
-	CheckVersion()
-EndIf
-
 LogMessage("# Run at " & _Now())
 LogMessage("# Easy Restore Point (kernel-panik) version " & $sToolVersion)
 LogMessage("# Website https://kernel-panik.me/")
@@ -252,5 +346,5 @@ LogMessage("# OS: " & GetHumanVersion() & " " & @OSArch & " (" & @OSBuild & ") "
 
 CreateRestorePoint()
 
-QuitTool(True, True)
+QuitTool(True)
 
